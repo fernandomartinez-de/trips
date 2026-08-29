@@ -113,8 +113,10 @@
   input:focus, textarea:focus, select:focus { outline: none; box-shadow: 0 0 0 2px rgba(199, 71, 44, 0.35); border-color: rgba(199, 71, 44, 0.6); }
   ::placeholder { color: rgba(27, 24, 21, 0.35); }
 
-  #map { height: 460px; border-radius: 6px; }
+  #map { height: 460px; border-radius: 6px; overflow: hidden; }
   .leaflet-container { background: #F5F1E8; font-family: inherit; }
+  /* Editorial map tint: desaturate and warm the OSM tiles to match the paper palette */
+  .leaflet-tile-pane { filter: grayscale(0.7) sepia(0.12) contrast(0.9) brightness(1.05); }
   .leaflet-popup-content-wrapper { background: #FBF8F1; color: #1B1815; border-radius: 4px; box-shadow: 0 8px 32px rgba(27,24,21,0.12); }
   .pin { width: 28px; height: 28px; display: grid; place-items: center; background: #C7472C; color: #FBF8F1; border: 2px solid #FBF8F1; box-shadow: 0 4px 12px rgba(199,71,44,0.35); border-radius: 999px; font-family: 'Noto Serif JP', serif; font-weight: 600; font-size: 12px; }
 
@@ -1422,8 +1424,10 @@ async function renderMap() {
 
   if (!map) {
     map = L.map('map', { scrollWheelZoom: false }).setView([36.5, 138.0], 5);
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-      attribution: '&copy; OpenStreetMap contributors &copy; CARTO', subdomains: 'abcd', maxZoom: 19,
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+      subdomains: 'abc',
+      maxZoom: 19,
     }).addTo(map);
   }
   // clear all existing markers
