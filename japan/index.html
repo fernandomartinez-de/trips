@@ -38,7 +38,54 @@
 <style>
   :root { color-scheme: light; }
   html, body { background-color: #FBF8F1; }
-  body { color: #1B1815; font-family: 'Noto Sans', system-ui, sans-serif; -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+  body {
+    color: #1B1815;
+    font-family: 'Noto Sans', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    background:
+      /* soft sunset wash from top-right, peach/coral warmth like the pagoda sky */
+      radial-gradient(1200px 800px at 90% 0%, rgba(255, 178, 140, 0.28), transparent 55%),
+      /* pale rose wash from bottom-left, cherry-blossom pink */
+      radial-gradient(900px 700px at 5% 100%, rgba(255, 205, 220, 0.30), transparent 60%),
+      /* a whisper of blue from bottom-right, like Fuji at dusk */
+      radial-gradient(700px 600px at 100% 90%, rgba(150, 180, 210, 0.18), transparent 60%),
+      /* base paper cream */
+      #FBF8F1;
+    background-attachment: fixed;
+  }
+  /* Faint cherry-blossom silhouette pattern layered over the washes */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    opacity: 0.08;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180' viewBox='0 0 180 180'><g fill='%23C7472C'><path d='M40 30c3-6 9-6 9 0 6-3 9 3 6 6 6 3 3 9-3 6 3 6-3 9-6 3-3 6-9 3-6-3-6 3-9-3-3-6-6-3-3-9 3-6z'/><path d='M130 90c2-4 6-4 6 0 4-2 6 2 4 4 4 2 2 6-2 4 2 4-2 6-4 2-2 4-6 2-4-2-4 2-6-2-2-4-4-2-2-6 2-4z' opacity='.75'/><path d='M75 140c2-4 6-4 6 0 4-2 6 2 4 4 4 2 2 6-2 4 2 4-2 6-4 2-2 4-6 2-4-2-4 2-6-2-2-4-4-2-2-6 2-4z' opacity='.6'/></g></svg>");
+    background-repeat: repeat;
+    background-size: 180px 180px;
+  }
+  /* Faint Fuji silhouette floating in the middle-back, very subtle */
+  body::after {
+    content: '';
+    position: fixed;
+    left: 50%;
+    bottom: 8%;
+    transform: translateX(-50%);
+    width: min(1200px, 90vw);
+    height: 220px;
+    z-index: -1;
+    pointer-events: none;
+    opacity: 0.06;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1200 220' preserveAspectRatio='xMidYMid meet'><path d='M0 220 L420 220 L560 90 L595 140 L640 60 L690 130 L775 220 L1200 220 Z' fill='%231B1815'/><path d='M540 105 L560 90 L580 105 L590 100 L580 115 L595 140 L575 120 L565 130 L560 122 L555 132 L545 122 L540 128 L525 118 L520 108 Z' fill='%23FBF8F1'/></svg>");
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: contain;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    body { background-attachment: scroll; }
+  }
   .font-display { font-family: 'Noto Serif JP', Georgia, serif; font-weight: 500; letter-spacing: -0.01em; }
   .rule { border-color: rgba(27, 24, 21, 0.14); }
   .hair { border-top: 1px solid rgba(27, 24, 21, 0.14); }
@@ -198,7 +245,7 @@
   }
 </style>
 </head>
-<body class="paper-texture">
+<body>
 
 <!-- =================== NAV =================== -->
 <nav class="sticky top-0 z-40 backdrop-blur bg-paper-50/85 border-b rule">
