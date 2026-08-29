@@ -1,0 +1,24 @@
+# macOS / Windows
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*.bak
+*~
+
+# Node / build (we don't currently build, but future-proof)
+node_modules/
+dist/
+build/
+
+# Local env
+.env
+.env.local
+
+# OS junk
+$RECYCLE.BIN/
+*.lnk
