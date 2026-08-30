@@ -68,6 +68,17 @@ create table if not exists public.japan_inspo (
     created_at  timestamptz not null default now()
 );
 create index if not exists japan_inspo_sort_idx on public.japan_inspo(sort_order);
+-- Unique constraint on url so re-running the seed below is idempotent.
+-- Wrapped in a DO block because ADD CONSTRAINT itself is not idempotent.
+do $$
+begin
+    if not exists (
+        select 1 from pg_constraint
+        where conname = 'japan_inspo_url_unique' and conrelid = 'public.japan_inspo'::regclass
+    ) then
+        alter table public.japan_inspo add constraint japan_inspo_url_unique unique (url);
+    end if;
+end $$;
 
 create table if not exists public.japan_trip_glance (
     key         text primary key,
@@ -238,4 +249,4 @@ insert into public.japan_inspo (url, caption, author, sort_order) values
     ('assets/img/inspo-11-57b13703.jpg', 'Japón, foto 11', 'family', 11),
     ('assets/img/inspo-12-61a70fed.jpg', 'Japón, foto 12', 'family', 12),
     ('assets/img/inspo-13-da9bb830.jpg', 'Japón, foto 13', 'family', 13)
-on conflict do nothing;
+on conflict (url) do nothing;
