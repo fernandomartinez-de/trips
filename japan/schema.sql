@@ -46,9 +46,12 @@ create table if not exists public.japan_activities (
     lng          double precision,
     image_url    text not null default '',
     created_by   text not null default '',
+    updated_by   text not null default '',
     created_at   timestamptz not null default now(),
     updated_at   timestamptz not null default now()
 );
+-- Backfill column if the table pre-existed without it
+alter table public.japan_activities add column if not exists updated_by text not null default '';
 create index if not exists japan_activities_day_idx on public.japan_activities(day_number);
 
 create table if not exists public.japan_votes (
@@ -250,3 +253,66 @@ insert into public.japan_inspo (url, caption, author, sort_order) values
     ('assets/img/inspo-12-61a70fed.jpg', 'Japón, foto 12', 'family', 12),
     ('assets/img/inspo-13-da9bb830.jpg', 'Japón, foto 13', 'family', 13)
 on conflict (url) do nothing;
+
+
+-- -----------------------------------------------------------------------------
+-- Storage bucket for family image uploads (activity photos + inspo uploads).
+-- Public bucket so uploaded images are directly viewable by URL.
+-- 5 MB per file cap, image types only.
+-- -----------------------------------------------------------------------------
+
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values (
+    'japan-images',
+    'japan-images',
+    true,
+    5242880,
+    array['image/jpeg', 'image/png', 'image/webp', 'image/gif']
+)
+on conflict (id) do update
+    set public = excluded.public,
+        file_size_limit = excluded.file_size_limit,
+        allowed_mime_types = excluded.allowed_mime_types;
+
+-- RLS policies on storage.objects for the japan-images bucket.
+-- Same trust model as the rest of the tables: anon can read/insert/delete.
+do $$
+begin
+    if not exists (
+        select 1 from pg_policies
+        where schemaname = 'storage' and tablename = 'objects'
+        and policyname = 'japan_images_read'
+    ) then
+        create policy japan_images_read on storage.objects
+            for select to anon, authenticated
+            using (bucket_id = 'japan-images');
+    end if;
+    if not exists (
+        select 1 from pg_policies
+        where schemaname = 'storage' and tablename = 'objects'
+        and policyname = 'japan_images_insert'
+    ) then
+        create policy japan_images_insert on storage.objects
+            for insert to anon, authenticated
+            with check (bucket_id = 'japan-images');
+    end if;
+    if not exists (
+        select 1 from pg_policies
+        where schemaname = 'storage' and tablename = 'objects'
+        and policyname = 'japan_images_update'
+    ) then
+        create policy japan_images_update on storage.objects
+            for update to anon, authenticated
+            using (bucket_id = 'japan-images')
+            with check (bucket_id = 'japan-images');
+    end if;
+    if not exists (
+        select 1 from pg_policies
+        where schemaname = 'storage' and tablename = 'objects'
+        and policyname = 'japan_images_delete'
+    ) then
+        create policy japan_images_delete on storage.objects
+            for delete to anon, authenticated
+            using (bucket_id = 'japan-images');
+    end if;
+end $$;

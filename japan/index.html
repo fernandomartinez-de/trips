@@ -175,6 +175,16 @@
   .row-actions {
     display: flex; gap: 6px; align-items: center;
   }
+  .row-meta {
+    grid-column: 1 / -1;
+    font-size: 11px;
+    color: #8C8377;
+    padding: 6px 4px 0;
+    margin-top: 4px;
+    border-top: 1px dashed rgba(27,24,21,0.08);
+    line-height: 1.35;
+  }
+  .row-meta strong { color: #6E655A; font-weight: 500; }
   .icon-btn {
     width: 32px; height: 32px;
     display: grid; place-items: center;
@@ -652,11 +662,18 @@ const supaSync = {
       lat: a.lat != null ? Number(a.lat) : null,
       lng: a.lng != null ? Number(a.lng) : null,
       image_url: a.imageUrl || '',
-      created_by: state.user || '',
+      created_by: a.createdBy || state.user || '',
+      updated_by: state.user || '',
     };
     markLocal('activity:' + a.id);
-    supa.from('japan_activities').upsert(row).then(({ error }) => {
-      if (error) console.warn('upsertActivity failed', error);
+    supa.from('japan_activities').upsert(row).then(({ error, data }) => {
+      if (error) { console.warn('upsertActivity failed', error); return; }
+      // Optimistically stamp the local activity with the fresh timestamp+user
+      // so the "editado por" line updates immediately without waiting for realtime echo.
+      a.updatedBy = state.user || '';
+      a.updatedAt = new Date().toISOString();
+      if (!a.createdBy) a.createdBy = a.updatedBy;
+      renderDayView();
     });
   },
   deleteActivity(id) {
@@ -762,6 +779,7 @@ async function hydrateFromSupabase() {
           id: r.id, title: r.title, description: r.description,
           timeOfDay: r.time_of_day, cost: r.cost, ubicacion: r.ubicacion,
           lat: r.lat, lng: r.lng, imageUrl: r.image_url,
+          createdBy: r.created_by, updatedBy: r.updated_by, updatedAt: r.updated_at,
         });
       });
     }
@@ -848,6 +866,7 @@ function applyActivityChange(payload) {
       id: r.id, title: r.title, description: r.description,
       timeOfDay: r.time_of_day, cost: r.cost, ubicacion: r.ubicacion,
       lat: r.lat, lng: r.lng, imageUrl: r.image_url,
+      createdBy: r.created_by, updatedBy: r.updated_by, updatedAt: r.updated_at,
     };
     if (idx >= 0) list[idx] = next; else list.push(next);
   }
@@ -1068,24 +1087,109 @@ function fileToDataURL(file, maxDim=1200, quality=0.82) {
   });
 }
 
+// Resize the file client-side and return a Blob (used before upload to Storage).
+function fileToResizedBlob(file, maxDim=1200, quality=0.82) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = reject;
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = reject;
+      img.onload = () => {
+        const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+        const w = Math.max(1, Math.round(img.width * scale));
+        const h = Math.max(1, Math.round(img.height * scale));
+        const canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+        canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('toBlob returned null')), 'image/jpeg', quality);
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+// Upload a File (or Blob) to the japan-images Supabase Storage bucket.
+// Returns a public URL. Falls back to a client-side data URL if Supabase
+// Storage is unavailable (offline development).
+async function uploadImageToStorage(file, folder = 'activity') {
+  const blob = await fileToResizedBlob(file, 1200, 0.82);
+  if (!supa) {
+    const reader = new FileReader();
+    return new Promise((resolve, reject) => {
+      reader.onerror = reject;
+      reader.onload = () => resolve(reader.result);
+      reader.readAsDataURL(blob);
+    });
+  }
+  const id = (crypto && crypto.randomUUID) ? crypto.randomUUID() : Date.now() + '-' + Math.random().toString(36).slice(2);
+  const path = `${folder}/${id}.jpg`;
+  const { error } = await supa.storage.from('japan-images').upload(path, blob, {
+    contentType: 'image/jpeg',
+    upsert: false,
+    cacheControl: '31536000',
+  });
+  if (error) {
+    console.warn('Storage upload failed, using data URL fallback', error);
+    const reader = new FileReader();
+    return new Promise((resolve, reject) => {
+      reader.onerror = reject;
+      reader.onload = () => resolve(reader.result);
+      reader.readAsDataURL(blob);
+    });
+  }
+  const { data } = supa.storage.from('japan-images').getPublicUrl(path);
+  return data.publicUrl;
+}
+
+// Human-friendly relative time in Spanish.
+function relativeTime(iso) {
+  if (!iso) return '';
+  const then = new Date(iso).getTime();
+  if (!then) return '';
+  const diffSec = Math.max(0, Math.round((Date.now() - then) / 1000));
+  if (diffSec < 45)          return 'hace un momento';
+  if (diffSec < 90)          return 'hace 1 min';
+  const diffMin = Math.round(diffSec / 60);
+  if (diffMin < 60)          return `hace ${diffMin} min`;
+  const diffH = Math.round(diffMin / 60);
+  if (diffH < 24)            return `hace ${diffH} h`;
+  const diffD = Math.round(diffH / 24);
+  if (diffD < 7)             return `hace ${diffD} d`;
+  const diffW = Math.round(diffD / 7);
+  if (diffW < 5)             return `hace ${diffW} sem`;
+  const diffMo = Math.round(diffD / 30);
+  return `hace ${diffMo} mes${diffMo > 1 ? 'es' : ''}`;
+}
+
 let _uploadFor = null; // { aid, dayN } to identify where the upload lands
 document.getElementById('hiddenImageInput').addEventListener('change', async (e) => {
   const file = e.target.files && e.target.files[0];
   e.target.value = ''; // reset so same file can be picked again
   if (!file || !_uploadFor) return;
+  const img = document.getElementById('actImg');
+  const prevSrc = img && img.src;
+  if (img) img.style.opacity = '0.55';
   try {
-    const dataUrl = await fileToDataURL(file, 1400, 0.82);
+    // Upload to Supabase Storage (falls back to data URL if offline).
+    const publicUrl = await uploadImageToStorage(file, 'activity');
     const { aid, dayN } = _uploadFor;
     const a = (state.activities[dayN] || []).find(x => x.id === aid);
     if (!a) return;
-    a.imageUrl = dataUrl;
-    // Update the URL input if visible
-    const urlInput = document.querySelector(`[data-panel="imageUrl"][data-aid="${aid}"]`);
-    if (urlInput) urlInput.value = dataUrl.slice(0, 60) + '... (imagen cargada)';
-    // Update preview image
-    const img = document.getElementById('actImg');
-    if (img) img.src = dataUrl;
+    a.imageUrl = publicUrl;
+    saveState();
+    supaSync.upsertActivity(a, dayN);
+    if (img) { img.src = publicUrl; img.style.opacity = ''; }
+    // Re-render panel so the "Cambiar imagen" / Auto button state reflects the new URL
+    const d = ITINERARY.find(x => x.n === dayN);
+    if (d) {
+      document.getElementById('activityPanel').innerHTML = renderActivityPanel(d);
+      bindPanelEvents(d);
+    }
   } catch (err) {
+    console.warn(err);
+    if (img && prevSrc) { img.src = prevSrc; img.style.opacity = ''; }
     alert('No se pudo cargar la imagen. Intenta con otro archivo.');
   }
 });
@@ -1333,6 +1437,9 @@ function renderActivityRow(a, isSelected) {
         </div>
         <div class="row-desc-cell min-w-0">${descCell}</div>
         ${actionsCell}
+        ${a.updatedBy && a.updatedAt
+          ? `<div class="row-meta">Editado por <strong>${escapeHTML(a.updatedBy)}</strong> · ${relativeTime(a.updatedAt)}</div>`
+          : ''}
       </div>
     </li>
   `;
@@ -2058,9 +2165,9 @@ document.getElementById('hiddenInspoInput').addEventListener('change', async (e)
   let added = 0, failed = 0;
   for (const file of files) {
     try {
-      const dataUrl = await fileToDataURL(file, 1200, 0.78);
+      const publicUrl = await uploadImageToStorage(file, 'inspo');
       const caption = file.name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ');
-      const item = { url: dataUrl, caption, author, sort_order: -Date.now() };
+      const item = { url: publicUrl, caption, author, sort_order: -Date.now() };
       state.inspo.unshift(item);
       supaSync.addInspo(item);
       added++;
