@@ -346,7 +346,6 @@
     <div class="hidden md:flex items-center gap-6 text-sm">
       <a href="#itinerary" class="hover:text-vermilion-500 transition-colors">Itinerario</a>
       <a href="#map-section" class="hover:text-vermilion-500 transition-colors">Mapa</a>
-      <a href="#inspo" class="hover:text-vermilion-500 transition-colors">Inspiración</a>
       <a href="#budget" class="hover:text-vermilion-500 transition-colors">Presupuesto</a>
     </div>
     <div class="flex items-center gap-3">
@@ -423,20 +422,9 @@
   <div id="map" class="border rule"></div>
 </section>
 
-<!-- =================== INSPO =================== -->
-<section id="inspo" class="max-w-6xl mx-auto px-5 py-12 md:py-20 hair">
-  <div class="flex items-end justify-between mb-8 gap-6 flex-wrap">
-    <div>
-      <h2 class="font-display text-3xl md:text-5xl tracking-tight">Inspiración</h2>
-      <p class="mt-3 text-ink-500 max-w-[52ch]">Rincones de Japón para calentar motores. Sube las fotos de tu carpeta (por ejemplo Pictures/Japan) o pega URLs.</p>
-    </div>
-    <button id="uploadInspoBtn" class="text-sm btn-primary px-4 py-2 rounded-full inline-flex items-center gap-1.5">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-      Subir fotos del folder
-    </button>
-  </div>
-  <div id="inspoGrid" class="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4"></div>
-</section>
+<!-- Inspiración section removed. Photos still power activity image fallbacks
+     via activityImage() using state.inspo. -->
+
 
 <!-- =================== BUDGET =================== -->
 <section id="budget" class="max-w-6xl mx-auto px-5 py-12 md:py-20 hair">
@@ -474,9 +462,8 @@
   </div>
 </section>
 
-<!-- Hidden file inputs -->
+<!-- Hidden file input for per-activity image upload -->
 <input type="file" id="hiddenImageInput" accept="image/*" class="hidden" />
-<input type="file" id="hiddenInspoInput" accept="image/*" multiple class="hidden" />
 
 <script>
 /* =========================================================
@@ -2064,38 +2051,36 @@ async function geocode(text) {
   return null;
 }
 
-function collectMapItems() {
-  const items = [];
-  const seen = new Map();
-  for (const d of ITINERARY) {
-    const acts = state.activities[d.n] || [];
-    for (const a of acts) {
-      const u = (a.ubicacion || '').trim();
-      if (!u) continue;
-      if (!seen.has(u)) {
-        const item = { ubicacion: u, days: [d.n], activities: [{ day: d.n, a }] };
-        seen.set(u, item);
-        items.push(item);
-      } else {
-        const item = seen.get(u);
-        if (!item.days.includes(d.n)) item.days.push(d.n);
-        item.activities.push({ day: d.n, a });
-      }
-    }
-  }
-  return items;
-}
-
-function popupHTMLForItem(item) {
-  const rows = item.activities.map(({ day, a }) => `
-    <div style="padding:5px 0; border-bottom:1px dashed rgba(27,24,21,0.08); font-size:12px;">
-      <div style="font-weight:500; color:#1B1815;">Día ${day} · ${escapeHTML(a.title || 'Sin título')}</div>
-      ${Number(a.cost) ? `<span style="color:#6E655A; font-size:11px;">$${a.cost} / persona</span>` : ''}
+// Rich preview popup for a single activity pin.
+function popupHTMLForActivity(a, d) {
+  const dow = d.dow;
+  const dateStr = formatDate(d.date);
+  const turno = TIME_LABEL[TIMES.includes(a.timeOfDay) ? a.timeOfDay : 'tarde'];
+  const costLine = Number(a.cost) > 0
+    ? `<div style="font-size:11.5px; color:#6E655A; margin-top:6px; font-family:'Noto Sans',sans-serif; font-variant-numeric:tabular-nums;">$${a.cost} / persona</div>`
+    : '';
+  const descLine = a.description
+    ? `<div style="font-size:12.5px; color:#3C352E; margin-top:6px; line-height:1.45;">${escapeHTML(a.description)}</div>`
+    : '';
+  const meta = a.updatedBy && a.updatedAt
+    ? `<div style="font-size:10px; color:#8C8377; margin-top:8px; padding-top:6px; border-top:1px dashed rgba(27,24,21,0.10);">Editado por <strong style="color:#6E655A; font-weight:500;">${escapeHTML(a.updatedBy)}</strong> · ${relativeTime(a.updatedAt)}</div>`
+    : '';
+  return `
+    <div style="min-width: 240px; max-width: 300px;">
+      <div style="font-size:10px; letter-spacing:0.14em; text-transform:uppercase; color:#6E655A;">
+        Día ${d.n} · ${escapeHTML(dow)}, ${escapeHTML(dateStr)} · ${escapeHTML(turno)}
+      </div>
+      <div style="font-family:'Noto Serif JP',Georgia,serif; font-size:17px; color:#1B1815; margin-top:4px; letter-spacing:-0.01em; line-height:1.2;">
+        ${escapeHTML(a.title || 'Sin título')}
+      </div>
+      ${descLine}
+      ${a.ubicacion
+        ? `<div style="margin-top:8px;"><a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(a.ubicacion + ' Japan')}" target="_blank" rel="noopener" style="color:#C7472C; font-size:11.5px; text-decoration:none;">${escapeHTML(a.ubicacion)} ↗</a></div>`
+        : ''}
+      ${costLine}
+      ${meta}
     </div>
-  `).join('');
-  return `<strong>${escapeHTML(item.ubicacion)}</strong>
-          <a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(item.ubicacion + ' Japan')}" target="_blank" rel="noopener" style="color:#C7472C; font-size:11px; display:block; margin-top:4px;">Abrir en Google Maps ↗</a>
-          <div style="margin-top:8px;">${rows}</div>`;
+  `;
 }
 
 async function renderMap() {
@@ -2123,48 +2108,66 @@ async function renderMap() {
   Object.values(mapMarkers).forEach(m => m.setMap(null));
   mapMarkers = {};
 
-  const items = collectMapItems();
-  if (items.length === 0) {
+  // Collect one entry per activity (not per unique ubicación). Each activity gets
+  // its own distinct, clickable pin with its own rich popup.
+  const rows = [];
+  for (const d of ITINERARY) {
+    const acts = state.activities[d.n] || [];
+    for (const a of acts) {
+      if (!a.ubicacion || !String(a.ubicacion).trim()) continue;
+      rows.push({ a, d });
+    }
+  }
+  if (rows.length === 0) {
     map.setCenter({ lat: 36.5, lng: 138.0 });
     map.setZoom(5);
     return;
   }
 
   const bounds = new google.maps.LatLngBounds();
-  for (const item of items) {
+  const stackCount = new Map(); // "lat,lng" (rounded) -> count, for jitter offsets
+  for (const { a, d } of rows) {
     if (token !== _mapRenderToken) return;
-    // Prefer stored lat/lng on the activity (from Google Places selection).
-    // Falls back to Nominatim geocoding for free-form text.
+    // Prefer stored lat/lng (Google Places selection). Fallback: Nominatim geocode.
     let coords = null;
-    for (const { a } of item.activities) {
-      if (a.lat != null && a.lng != null) { coords = { lat: Number(a.lat), lng: Number(a.lng) }; break; }
+    if (a.lat != null && a.lng != null) {
+      coords = { lat: Number(a.lat), lng: Number(a.lng) };
+    } else {
+      coords = await geocode(a.ubicacion);
     }
-    if (!coords) coords = await geocode(item.ubicacion);
     if (token !== _mapRenderToken) return;
     if (!coords) continue;
-    const dayN = item.days[0];
+    // Nudge pins that would land on the same coordinates (e.g. two meals at
+    // Dotonbori) in a small spiral so each is visible + clickable.
+    const key = coords.lat.toFixed(4) + ',' + coords.lng.toFixed(4);
+    const n = stackCount.get(key) || 0;
+    stackCount.set(key, n + 1);
+    if (n > 0) {
+      const angle = n * (Math.PI / 3);          // 60° per stack level
+      const radius = 0.00035 * Math.ceil(n / 6); // ~35m first ring, wider after
+      coords = { lat: coords.lat + Math.sin(angle) * radius, lng: coords.lng + Math.cos(angle) * radius };
+    }
     const marker = new google.maps.Marker({
       position: coords,
       map,
-      title: item.ubicacion,
-      icon: markerIconForDay(dayN),
+      title: (a.title || a.ubicacion || '') + ' · Día ' + d.n,
+      icon: markerIconForDay(d.n),
     });
     marker.addListener('click', () => {
-      mapInfoWindow.setContent(popupHTMLForItem(item));
+      mapInfoWindow.setContent(popupHTMLForActivity(a, d));
       mapInfoWindow.open({ anchor: marker, map });
       state.editingHeaderDay = null;
       state.editingActivityId = null;
       state.editingActivityDay = null;
       state.editSnapshot = null;
-      state.selectedDay = dayN;
-      const first = (state.activities[dayN] || [])[0];
-      state.selectedActivity[dayN] = first ? first.id : null;
+      state.selectedDay = d.n;
+      state.selectedActivity[d.n] = a.id;
       saveState(); renderPills(); renderDayView();
     });
-    mapMarkers[item.ubicacion] = marker;
+    mapMarkers[a.id] = marker;
     bounds.extend(coords);
   }
-  if (!bounds.isEmpty()) map.fitBounds(bounds, 50);
+  if (!bounds.isEmpty()) map.fitBounds(bounds, 60);
 }
 
 // Legacy shim so older call sites still trigger a full re-render
@@ -2176,6 +2179,7 @@ function renderMapPopups() { renderMap(); }
 
 function renderInspo() {
   const grid = document.getElementById('inspoGrid');
+  if (!grid) return; // Inspiración section removed from UI; state.inspo still populated for activity fallbacks.
   grid.innerHTML = state.inspo.map((item, i) => `
     <figure class="group relative overflow-hidden rounded-sm bg-paper-200 aspect-[3/4]">
       <img src="${item.url}" alt="${escapeAttr(item.caption)}" class="w-full h-full object-cover transition duration-500 group-hover:scale-[1.03]" loading="lazy" />
@@ -2195,29 +2199,9 @@ function renderInspo() {
     });
   });
 }
-document.getElementById('uploadInspoBtn').addEventListener('click', () => {
-  document.getElementById('hiddenInspoInput').click();
-});
-document.getElementById('hiddenInspoInput').addEventListener('change', async (e) => {
-  const files = Array.from(e.target.files || []);
-  e.target.value = '';
-  if (files.length === 0) return;
-  const author = state.user || 'family';
-  let added = 0, failed = 0;
-  for (const file of files) {
-    try {
-      const publicUrl = await uploadImageToStorage(file, 'inspo');
-      const caption = file.name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ');
-      const item = { url: publicUrl, caption, author, sort_order: -Date.now() };
-      state.inspo.unshift(item);
-      supaSync.addInspo(item);
-      added++;
-    } catch (err) { failed++; }
-  }
-  saveState();
-  renderInspo();
-  if (failed) alert('Subidas: ' + added + '. Fallaron: ' + failed + '.');
-});
+// Inspiración section removed from UI. Its upload handlers are gone.
+// state.inspo remains populated (13 seeded photos + any historical uploads)
+// so activityImage(a) can pick from it as a per-activity backdrop fallback.
 
 /* =========================================================
    BUDGET
@@ -2334,7 +2318,6 @@ function render() {
   renderTripGlance();
   renderPills();
   renderDayView();
-  renderInspo();
   renderBudget();
   renderCountdown();
   updateUserBadge();
