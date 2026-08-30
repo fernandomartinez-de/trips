@@ -1,31 +1,66 @@
 # trips
 
-Static HTML trip planning sites, one per trip, hosted with GitHub Pages.
+Static HTML trip planning sites for the Martinez family, one per trip, hosted on GitHub Pages with real-time collaboration via Supabase.
 
 ## Trips
 
-- **Japón · Noviembre 2026** — [/japan](./japan/) · [ver en Pages](https://fernandomartinez-de.github.io/trips/japan/)
+- **Japan · November 2026** - [/japan](./japan/) · [live site](https://fernandomartinez-de.github.io/trips/japan/)
 
-## Cómo agregar un viaje nuevo
+## How to add a new trip
 
-1. Duplicar la carpeta de un viaje existente (ej. `japan/`) con el nombre del nuevo destino.
-2. Editar `index.html` con las fechas, ciudades y actividades del viaje nuevo.
-3. Actualizar la lista en este README.
-4. `git add .`, `git commit`, `git push`.
+1. Duplicate an existing trip folder (e.g. `japan/`) and rename it after the new destination (e.g. `italy/`, `hawaii/`).
+2. Edit `index.html` in the new folder: update the `ITINERARY` array with dates, cities, coordinates, and activities. Update the hero copy and page title.
+3. If the new trip needs its own database, either add `italy_*`-prefixed tables to the same Supabase project (following the pattern in `japan/schema.sql`), or spin up a separate Supabase project and update the URL + publishable key at the top of the new trip's `index.html`.
+4. Add a bullet to the "Trips" list in this README, and add a card for it in the root `index.html`.
+5. `git add .`, `git commit -m "Add [trip name] trip"`, `git push`. GitHub Pages redeploys automatically in about a minute.
 
-## Cómo funciona
+## How it works
 
-Cada viaje vive en su propia subcarpeta con un `index.html` autocontenido. El HTML incluye Tailwind (via CDN), Leaflet (para el mapa) y las fotos embebidas como data URLs. No hay backend por ahora: los datos que edite cada persona (votos, notas, palomeadas) viven en su localStorage del navegador.
+Each trip lives in its own subfolder with a single self-contained `index.html`. The site is a plain static page that pulls in Tailwind (CDN), the Supabase JS SDK (CDN), and Google Maps JS (CDN, keyed). Images live as regular files under each trip's `assets/img/` folder rather than being embedded, so they cache well and the HTML stays small.
 
-## Desarrollo local
+Collaboration works through Supabase:
 
-Basta con abrir el `index.html` directamente en un navegador. No hay build step.
+- Every family member opens the same URL. No login. Each person picks their own name once via the "Poner nombre" button.
+- Activity edits, votes, day headers, trip glance, and inspiration photos all save to Supabase.
+- Supabase Realtime pushes those changes back to everyone else's browser within about a second, so the site feels live.
+- Row Level Security policies (all in `japan/schema.sql`) enforce that the anonymous publishable key can read and write only these specific tables.
+- localStorage caches state locally so the UI is instant and works offline for reads.
 
-## Pages
+## Repo layout
 
-Para hostear:
+```
+trips/
+├── README.md              this file
+├── SETUP.md               one-time setup: git, GitHub Pages, Supabase
+├── .gitignore
+├── index.html             root landing page listing all trips
+└── japan/
+    ├── index.html         the trip site
+    ├── schema.sql         Supabase DDL + RLS policies + Realtime + seed data
+    └── assets/
+        └── img/           inspiration photos + hero portrait, one file each
+```
 
-1. En GitHub → Settings → Pages
-2. Source: **Deploy from a branch**
-3. Branch: `main`, folder: `/ (root)`
-4. Guardar. La URL será `https://<usuario>.github.io/trips/<viaje>/`.
+## Local development
+
+Open `japan/index.html` directly in a browser. There is no build step.
+
+Two caveats when running locally by double-clicking the file (`file:///...`):
+
+- Google Places autocomplete will not work: the API key is HTTP-referrer restricted and does not match `file://`. To test autocomplete, either serve the folder from a local HTTP server (e.g. `python -m http.server` from the trip folder, then visit `http://localhost:8000`) or just test against the deployed URL.
+- Supabase and Realtime work fine from `file://` (no referrer restriction).
+
+## GitHub Pages
+
+Already configured. Settings → Pages → Deploy from a branch, `main`, `/ (root)`. Live at:
+
+- `https://fernandomartinez-de.github.io/trips/` (landing page listing all trips)
+- `https://fernandomartinez-de.github.io/trips/japan/` (Japan trip direct)
+
+## Supabase
+
+Project: `trips`. Anonymous publishable key + project URL are embedded in each trip's `index.html`. Row Level Security is what actually gates access. Uploaded photos go to the `japan-images` Storage bucket.
+
+To load or refresh the schema, paste `japan/schema.sql` into Supabase's SQL Editor and Run. The script is idempotent and safe to re-run.
+
+See `SETUP.md` for the full one-time setup walkthrough.
