@@ -224,6 +224,26 @@
   .gm-style-iw-d { overflow: auto !important; max-height: 260px !important; }
 
   .thumb-btn.voted { background: #C7472C; color: #FBF8F1; border-color: #C7472C; }
+  .voters-line { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; padding-left: 8px; }
+  .vote-chip {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: 10.5px;
+    padding: 2px 9px;
+    background: rgba(199, 71, 44, 0.10);
+    color: #7E2D1B;
+    border: 1px solid rgba(199, 71, 44, 0.22);
+    border-radius: 999px;
+    line-height: 1.4;
+    font-weight: 500;
+    letter-spacing: 0.01em;
+  }
+  .vote-chip::before {
+    content: '';
+    display: inline-block;
+    width: 5px; height: 5px;
+    border-radius: 999px;
+    background: #C7472C;
+  }
   .checkbox-item.done .item-label { text-decoration: line-through; color: #8C8377; }
   .chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; background: rgba(27,24,21,0.05); font-size: 11px; letter-spacing: 0.02em; }
   .btn-primary { background: #1B1815; color: #FBF8F1; transition: background 200ms; }
@@ -441,7 +461,7 @@
 
     <div class="md:col-span-5">
       <div class="relative">
-        <div class="aspect-[4/5] overflow-hidden rounded-sm bg-paper-200 shadow-[0_24px_60px_-24px_rgba(27,24,21,0.28)]">
+        <div class="aspect-[2/1] overflow-hidden rounded-sm bg-paper-200 shadow-[0_24px_60px_-24px_rgba(27,24,21,0.28)]">
           <img src="assets/img/hero-family.jpg" alt="Familia Martínez en Japón" class="w-full h-full object-cover" loading="lazy" />
         </div>
         <div class="absolute -bottom-5 -left-5 md:-bottom-6 md:-left-8 bg-paper-50 border rule rounded-sm p-4 shadow-[0_12px_32px_-16px_rgba(27,24,21,0.24)] min-w-[180px]">
@@ -1526,7 +1546,9 @@ function renderActivityRow(a, isSelected) {
         </button>
         <div class="min-w-0">
           ${titleCell}
-          ${v.voters.length ? `<p class="text-[11px] text-ink-500 mt-1 pl-2">Le encanta a ${v.voters.map(escapeHTML).join(', ')}</p>` : ''}
+          ${v.voters.length
+            ? `<div class="voters-line">${v.voters.map(n => `<span class="vote-chip">${escapeHTML(n)}</span>`).join('')}</div>`
+            : ''}
         </div>
         <div class="row-desc-cell min-w-0">${descCell}</div>
         ${actionsCell}
@@ -2021,14 +2043,14 @@ function toggleVote(aid) {
   }
   const row = document.querySelector(`.activity-row[data-aid="${aid}"]`);
   if (row) {
-    const existing = row.querySelector('p.text-\\[11px\\]');
+    const existing = row.querySelector('.voters-line');
     if (existing) existing.remove();
     if (v.voters.length) {
       const div = row.querySelector('.min-w-0');
-      const p = document.createElement('p');
-      p.className = 'text-[11px] text-ink-500 mt-1 pl-2';
-      p.textContent = 'Le encanta a ' + v.voters.join(', ');
-      div.appendChild(p);
+      const wrap = document.createElement('div');
+      wrap.className = 'voters-line';
+      wrap.innerHTML = v.voters.map(n => `<span class="vote-chip">${escapeHTML(n)}</span>`).join('');
+      div.appendChild(wrap);
     }
   }
 }
