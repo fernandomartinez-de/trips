@@ -199,6 +199,42 @@
   .side-input.num { padding-left: 24px; }
   .side-read { font-size: 14px; padding: 4px 0; }
 
+  /* Google Places autocomplete dropdown */
+  .pac-wrap { position: relative; }
+  .pac-list {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0; right: 0;
+    z-index: 30;
+    background: #FBF8F1;
+    border: 1px solid rgba(27,24,21,0.14);
+    border-radius: 6px;
+    box-shadow: 0 12px 32px -12px rgba(27,24,21,0.25);
+    max-height: 260px;
+    overflow-y: auto;
+  }
+  .pac-list.hidden { display: none; }
+  .pac-item {
+    padding: 8px 10px;
+    cursor: pointer;
+    border-bottom: 1px solid rgba(27,24,21,0.08);
+    transition: background 120ms;
+  }
+  .pac-item:last-child { border-bottom: none; }
+  .pac-item:hover, .pac-item.active { background: rgba(199,71,44,0.10); }
+  .pac-main { font-size: 13.5px; color: #1B1815; line-height: 1.3; }
+  .pac-secondary { font-size: 11px; color: #6E655A; margin-top: 2px; }
+  .pac-footer {
+    padding: 6px 10px;
+    font-size: 10px;
+    color: #8C8377;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    text-align: right;
+    background: rgba(27,24,21,0.03);
+    border-top: 1px solid rgba(27,24,21,0.08);
+  }
+
   /* Day header inputs */
   .day-title-input {
     background: transparent;
@@ -400,6 +436,11 @@
 
 const TIMES = ['mañana', 'tarde', 'noche'];
 const TIME_LABEL = { 'mañana': 'Mañana', 'tarde': 'Tarde', 'noche': 'Noche' };
+
+// Google Places API (New) key. HTTP-referrer restricted at the Google Cloud
+// console to fernandomartinez-de.github.io + localhost, and API-restricted to
+// Places API (New) + Maps JS. It's safe to embed in client HTML.
+const GOOGLE_PLACES_KEY = 'AIzaSyCzVi_vQMDVzkzivFo010pRSu1NoRC41Aw';
 
 const TG_KEYS = ['fechas', 'ciudades', 'temporada', 'viajeros'];
 const TG_DEFAULTS = {
@@ -642,6 +683,63 @@ function activityImage(a, dayN) {
   // 3) last-resort picsum fallback (only if inspo is empty)
   const seed = slugify(((a && a.title) || '') + '-' + ((a && a.ubicacion) || '')) || 'japan-scene';
   return `https://picsum.photos/seed/act-${seed}/800/1000`;
+}
+
+/* =========================================================
+   GOOGLE PLACES AUTOCOMPLETE (New API, REST)
+   Session tokens group autocomplete requests + a final details call
+   into one billable session, per Google's docs. We generate a fresh
+   token per selection cycle.
+   ========================================================= */
+
+function newPlacesSession() {
+  return (crypto && crypto.randomUUID) ? crypto.randomUUID() :
+    'sess-' + Math.random().toString(36).slice(2) + Date.now().toString(36);
+}
+
+async function placesAutocomplete(input, sessionToken) {
+  if (!input || input.length < 3) return [];
+  try {
+    const res = await fetch('https://places.googleapis.com/v1/places:autocomplete', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Goog-Api-Key': GOOGLE_PLACES_KEY,
+        'X-Goog-FieldMask': 'suggestions.placePrediction.placeId,suggestions.placePrediction.text,suggestions.placePrediction.structuredFormat',
+      },
+      body: JSON.stringify({
+        input,
+        includedRegionCodes: ['jp'],
+        sessionToken,
+      }),
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return (data.suggestions || []).map(s => {
+      const p = s.placePrediction || {};
+      return {
+        placeId: p.placeId,
+        text: (p.text && p.text.text) || '',
+        main: (p.structuredFormat && p.structuredFormat.mainText && p.structuredFormat.mainText.text) || (p.text && p.text.text) || '',
+        secondary: (p.structuredFormat && p.structuredFormat.secondaryText && p.structuredFormat.secondaryText.text) || '',
+      };
+    }).filter(x => x.placeId);
+  } catch (e) { return []; }
+}
+
+async function placeDetails(placeId, sessionToken) {
+  try {
+    const url = `https://places.googleapis.com/v1/places/${encodeURIComponent(placeId)}?sessionToken=${encodeURIComponent(sessionToken)}`;
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'X-Goog-Api-Key': GOOGLE_PLACES_KEY,
+        'X-Goog-FieldMask': 'id,displayName,formattedAddress,location',
+      },
+    });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch (e) { return null; }
 }
 
 /* =========================================================
@@ -951,7 +1049,10 @@ function renderActivityPanel(d) {
        </select>`
     : `<p class="side-read mt-1">${TIME_LABEL[TIMES.includes(a.timeOfDay) ? a.timeOfDay : 'tarde']}</p>`;
   const ubiField = isEditing
-    ? `<input type="text" class="side-input mt-1.5" data-panel="ubicacion" data-aid="${a.id}" value="${escapeAttr(a.ubicacion || '')}" placeholder="Zona, templo, dirección..." />`
+    ? `<div class="pac-wrap mt-1.5">
+         <input type="text" class="side-input" data-panel="ubicacion" data-aid="${a.id}" value="${escapeAttr(a.ubicacion || '')}" placeholder="Busca en Google Maps..." autocomplete="off" />
+         <div class="pac-list hidden" data-pac-list></div>
+       </div>`
     : `<p class="side-read mt-1">${a.ubicacion ? escapeHTML(a.ubicacion) : '<span class="italic text-ink-500">Sin ubicación</span>'}</p>`;
   const costField = isEditing
     ? `<div class="relative mt-1.5">
@@ -1293,6 +1394,80 @@ function bindPanelEvents(d) {
     btn.addEventListener('click', () => commitActivityEdit());
   });
 
+  // Google Places autocomplete on the ubicación input
+  document.querySelectorAll('#activityPanel [data-panel="ubicacion"]').forEach(input => {
+    const wrap = input.parentElement;
+    const listEl = wrap.querySelector('[data-pac-list]');
+    if (!listEl) return;
+    let sessionToken = newPlacesSession();
+    let debounceTimer = null;
+    let items = [];
+    let activeIdx = -1;
+
+    const hideList = () => { listEl.classList.add('hidden'); items = []; activeIdx = -1; };
+    const renderItems = () => {
+      if (!items.length) { hideList(); return; }
+      listEl.innerHTML = items.map((s, i) => `
+        <div class="pac-item ${i===activeIdx?'active':''}" data-pid="${escapeAttr(s.placeId)}" data-text="${escapeAttr(s.text)}">
+          <div class="pac-main">${escapeHTML(s.main || s.text)}</div>
+          ${s.secondary ? `<div class="pac-secondary">${escapeHTML(s.secondary)}</div>` : ''}
+        </div>
+      `).join('') + '<div class="pac-footer">Powered by Google</div>';
+      listEl.classList.remove('hidden');
+    };
+    const applyChoice = async (placeId, displayText) => {
+      const aid = input.dataset.aid;
+      const a = (state.activities[d.n] || []).find(x => x.id === aid);
+      if (!a) { hideList(); return; }
+      a.ubicacion = displayText;
+      input.value = displayText;
+      // Fetch coordinates and cache them so the map skips the Nominatim step
+      const details = await placeDetails(placeId, sessionToken);
+      if (details && details.location) {
+        const coords = { lat: details.location.latitude, lng: details.location.longitude };
+        state.geocache[displayText] = coords;
+        a.lat = coords.lat;
+        a.lng = coords.lng;
+      }
+      sessionToken = newPlacesSession();
+      hideList();
+    };
+
+    // Prevent input blur when clicking inside the dropdown
+    listEl.addEventListener('mousedown', e => e.preventDefault());
+
+    input.addEventListener('input', () => {
+      const aid = input.dataset.aid;
+      const a = (state.activities[d.n] || []).find(x => x.id === aid);
+      if (a) a.ubicacion = input.value;
+      clearTimeout(debounceTimer);
+      const q = input.value.trim();
+      if (q.length < 3) { hideList(); return; }
+      debounceTimer = setTimeout(async () => {
+        const results = await placesAutocomplete(q, sessionToken);
+        items = results;
+        activeIdx = -1;
+        renderItems();
+      }, 280);
+    });
+
+    input.addEventListener('keydown', e => {
+      if (listEl.classList.contains('hidden') || !items.length) return;
+      if (e.key === 'ArrowDown') { e.preventDefault(); activeIdx = Math.min(items.length - 1, activeIdx + 1); renderItems(); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); activeIdx = Math.max(0, activeIdx - 1); renderItems(); }
+      else if (e.key === 'Enter' && activeIdx >= 0) { e.preventDefault(); applyChoice(items[activeIdx].placeId, items[activeIdx].text); }
+      else if (e.key === 'Escape') { hideList(); }
+    });
+
+    input.addEventListener('blur', () => { setTimeout(hideList, 180); });
+
+    listEl.addEventListener('click', e => {
+      const item = e.target.closest('.pac-item');
+      if (!item) return;
+      applyChoice(item.dataset.pid, item.dataset.text);
+    });
+  });
+
   // Upload image
   document.querySelectorAll('[data-upload-img]').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -1443,7 +1618,13 @@ async function renderMap() {
   const bounds = [];
   for (const item of items) {
     if (token !== _mapRenderToken) return;
-    const coords = await geocode(item.ubicacion);
+    // Prefer lat/lng directly stored on the activity (set when a Google Place is selected).
+    // Falls back to Nominatim geocoding for free-form text.
+    let coords = null;
+    for (const { a } of item.activities) {
+      if (a.lat != null && a.lng != null) { coords = { lat: Number(a.lat), lng: Number(a.lng) }; break; }
+    }
+    if (!coords) coords = await geocode(item.ubicacion);
     if (token !== _mapRenderToken) return;
     if (!coords) continue;
     const dayN = item.days[0];
