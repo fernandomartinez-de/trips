@@ -78,8 +78,37 @@
   /* Momentum scrolling on the horizontal day-pill strip. */
   .day-pill-scroll { -webkit-overflow-scrolling: touch; }
 
-  /* Map index list (below the map) */
+  /* Map index list (below the map), grouped by city */
   #mapIndex ol { list-style: none; padding: 0; margin: 0; }
+  .map-index-group + .map-index-group { margin-top: 28px; }
+  .map-index-city {
+    font-family: 'Noto Serif JP', Georgia, serif;
+    font-size: 22px;
+    color: #1B1815;
+    margin: 0 0 12px 0;
+    font-weight: 500;
+    letter-spacing: -0.01em;
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+  }
+  .map-index-city::before {
+    content: '';
+    display: inline-block;
+    width: 6px; height: 6px;
+    border-radius: 999px;
+    background: #C7472C;
+    align-self: center;
+    flex-shrink: 0;
+  }
+  .map-index-count {
+    font-family: 'Noto Sans', system-ui, sans-serif;
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #8C8377;
+    font-weight: 400;
+  }
   .map-index-row {
     display: grid;
     grid-template-columns: 40px 1fr;
@@ -2224,6 +2253,21 @@ function openPinPopup(marker, a, d, idx) {
   saveState(); renderPills(); renderDayView();
 }
 
+function renderMapIndexRowHTML({ a, d, idx }) {
+  const hasCoords = !!mapMarkers[a.id];
+  return `
+    <li>
+      <button class="map-index-row w-full text-left ${hasCoords ? '' : 'is-muted'}" data-idx="${idx}" data-aid="${escapeAttr(a.id)}">
+        <span class="map-index-num">${idx}</span>
+        <span class="map-index-body">
+          <span class="map-index-title">${escapeHTML(a.title || a.ubicacion || 'Sin título')}</span>
+          <span class="map-index-meta">Día ${d.n} · ${escapeHTML(d.dow)} ${escapeHTML(formatDate(d.date))} · ${escapeHTML(TIME_LABEL[TIMES.includes(a.timeOfDay) ? a.timeOfDay : 'tarde'])}${a.ubicacion ? ' · ' + escapeHTML(a.ubicacion) : ''}</span>
+        </span>
+      </button>
+    </li>
+  `;
+}
+
 function renderMapIndex(rows) {
   const el = document.getElementById('mapIndex');
   if (!el) return;
@@ -2231,36 +2275,40 @@ function renderMapIndex(rows) {
     el.innerHTML = '';
     return;
   }
+  // Group by city (dayTitle) preserving order-of-first-appearance and global pin numbering.
+  const groups = [];
+  const groupByCity = new Map();
+  for (const row of rows) {
+    const city = (dayTitle(row.d) || 'Sin ciudad').trim();
+    if (!groupByCity.has(city)) {
+      const g = { city, items: [] };
+      groupByCity.set(city, g);
+      groups.push(g);
+    }
+    groupByCity.get(city).items.push(row);
+  }
+
   el.innerHTML = `
-    <p class="text-[11px] uppercase tracking-widest text-ink-500 mb-3">Índice del mapa</p>
-    <ol class="grid md:grid-cols-2 gap-2">
-      ${rows.map(({ a, d, idx }) => {
-        const hasCoords = !!mapMarkers[a.id];
-        return `
-          <li>
-            <button class="map-index-row w-full text-left ${hasCoords ? '' : 'is-muted'}" data-idx="${idx}" data-aid="${escapeAttr(a.id)}">
-              <span class="map-index-num">${idx}</span>
-              <span class="map-index-body">
-                <span class="map-index-title">${escapeHTML(a.title || a.ubicacion || 'Sin título')}</span>
-                <span class="map-index-meta">Día ${d.n} · ${escapeHTML(d.dow)} ${escapeHTML(formatDate(d.date))} · ${escapeHTML(TIME_LABEL[TIMES.includes(a.timeOfDay) ? a.timeOfDay : 'tarde'])}${a.ubicacion ? ' · ' + escapeHTML(a.ubicacion) : ''}</span>
-              </span>
-            </button>
-          </li>
-        `;
-      }).join('')}
-    </ol>
+    <p class="text-[11px] uppercase tracking-widest text-ink-500 mb-4">Índice del mapa</p>
+    ${groups.map(g => `
+      <section class="map-index-group">
+        <h3 class="map-index-city">${escapeHTML(g.city)} <span class="map-index-count">${g.items.length}</span></h3>
+        <ol class="grid md:grid-cols-2 gap-2">
+          ${g.items.map(renderMapIndexRowHTML).join('')}
+        </ol>
+      </section>
+    `).join('')}
   `;
+
   el.querySelectorAll('[data-aid]').forEach(btn => {
     btn.addEventListener('click', () => {
       const aid = btn.dataset.aid;
       const marker = mapMarkers[aid];
       if (!marker || !map) return;
-      // Zoom into the pin and open its popup
       map.panTo(marker.getPosition());
       if (map.getZoom() < 12) map.setZoom(13);
       const row = rows.find(r => r.a.id === aid);
       if (row) openPinPopup(marker, row.a, row.d, row.idx);
-      // Scroll map into view (helpful on mobile where index sits below)
       document.getElementById('map').scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
   });
