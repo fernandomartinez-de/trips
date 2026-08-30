@@ -240,6 +240,29 @@ Free GitHub Pages requires public repos. If you upgrade to **GitHub Pro** ($4/mo
 
 ---
 
+## Supabase (collaboration backend) — one-time schema load
+
+The site uses Supabase to sync edits across family members in real time. The publishable key + project URL are already embedded in `japan/index.html`. You just need to load the schema into the DB once (or any time you want to reset).
+
+1. Go to https://supabase.com/dashboard/project/hmeenrnlbdzqhbdbsxjf (the `trips` project).
+2. In the left sidebar, click the **SQL Editor** icon (looks like a database console).
+3. Click **+ New query** (top-right).
+4. Open `japan/schema.sql` from this repo, select all (Ctrl+A), copy (Ctrl+C), and paste into the SQL editor.
+5. Click the green **Run** button (or Ctrl+Enter).
+
+Expected result: "Success. No rows returned." plus the 6 tables now show up in **Table Editor** → `japan_days`, `japan_activities`, `japan_votes`, `japan_inspo`, `japan_trip_glance`, `japan_geocache`.
+
+The script is idempotent: safe to re-run. It uses `create table if not exists` and `on conflict do nothing` for seeds, so you can also re-paste it if you add tables later without wiping existing data.
+
+**If you ever need to reset the trip and start over from scratch**, run these in the SQL Editor (in this order):
+
+```sql
+truncate table public.japan_votes, public.japan_activities cascade;
+delete from public.japan_geocache;
+-- japan_days, japan_trip_glance, japan_inspo keep their seed rows;
+-- edits made via the site sit as UPDATEs on the seeded rows.
+```
+
 ## What's in this repo
 
 - **README.md** — Documentation for anyone opening the repo. Lists all trips, explains structure.

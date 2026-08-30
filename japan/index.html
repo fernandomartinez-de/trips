@@ -11,6 +11,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@300;400;500;600;700;900&family=Noto+Sans:wght@300;400;500;600;700&family=Noto+Sans+JP:wght@300;400;500;700&display=swap" rel="stylesheet" />
 
 <script src="https://cdn.tailwindcss.com?plugins=forms"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
   tailwind.config = {
     theme: {
@@ -439,6 +440,19 @@ const TIME_LABEL = { 'mañana': 'Mañana', 'tarde': 'Tarde', 'noche': 'Noche' };
 // Places API (New) + Maps JS. It's safe to embed in client HTML.
 const GOOGLE_PLACES_KEY = 'AIzaSyCzVi_vQMDVzkzivFo010pRSu1NoRC41Aw';
 
+// Supabase (family collaboration backend). The publishable key is safe to embed;
+// Row Level Security is what gates who can read/write. See japan/schema.sql.
+const SUPABASE_URL = 'https://hmeenrnlbdzqhbdbsxjf.supabase.co';
+const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_n0GbcnDhojPMzKOVAGDp3Q_tSrLYnlX';
+let supa = null;
+try {
+  if (window.supabase && window.supabase.createClient) {
+    supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+      auth: { persistSession: false },
+    });
+  }
+} catch (e) { console.warn('Supabase init failed', e); }
+
 const TG_KEYS = ['fechas', 'ciudades', 'temporada', 'viajeros'];
 const TG_DEFAULTS = {
   fechas:    { label: 'Fechas',    title: '13 - 30 nov 2026',    subtitle: '18 días, 17 noches' },
@@ -606,6 +620,294 @@ state.editingActivityId = null;
 state.editingActivityDay = null;
 state.editSnapshot = null;
 saveState();
+
+/* =========================================================
+   SUPABASE SYNC LAYER
+   ---------------------------------------------------------
+   Local `state` remains the source of truth for the UI. On mount
+   we hydrate from Supabase (falling back to localStorage). Every
+   mutation writes to both localStorage (fast) and Supabase (shared).
+   Realtime pushes remote changes back into `state` and re-renders.
+   ========================================================= */
+
+// Track our own writes so we don't reprocess them from realtime echo.
+const _recentLocalMutations = new Set();
+function markLocal(key) {
+  _recentLocalMutations.add(key);
+  setTimeout(() => _recentLocalMutations.delete(key), 4000);
+}
+
+// Fire-and-forget helpers. All are no-ops when supa is null (offline mode).
+const supaSync = {
+  upsertActivity(a, dayN) {
+    if (!supa) return;
+    const row = {
+      id: a.id,
+      day_number: dayN,
+      title: a.title || '',
+      description: a.description || '',
+      time_of_day: TIMES.includes(a.timeOfDay) ? a.timeOfDay : 'tarde',
+      cost: Math.max(0, Number(a.cost) || 0),
+      ubicacion: a.ubicacion || '',
+      lat: a.lat != null ? Number(a.lat) : null,
+      lng: a.lng != null ? Number(a.lng) : null,
+      image_url: a.imageUrl || '',
+      created_by: state.user || '',
+    };
+    markLocal('activity:' + a.id);
+    supa.from('japan_activities').upsert(row).then(({ error }) => {
+      if (error) console.warn('upsertActivity failed', error);
+    });
+  },
+  deleteActivity(id) {
+    if (!supa) return;
+    markLocal('activity-del:' + id);
+    supa.from('japan_activities').delete().eq('id', id).then(({ error }) => {
+      if (error) console.warn('deleteActivity failed', error);
+    });
+  },
+  upsertDay(dayN, edits) {
+    if (!supa) return;
+    const row = {
+      day_number: dayN,
+      title: edits.title != null ? edits.title : '',
+      subtitle: edits.subtitle != null ? edits.subtitle : '',
+      focus: edits.focus != null ? edits.focus : '',
+    };
+    markLocal('day:' + dayN);
+    supa.from('japan_days').upsert(row).then(({ error }) => {
+      if (error) console.warn('upsertDay failed', error);
+    });
+  },
+  addVote(activityId, voterName) {
+    if (!supa || !voterName) return;
+    markLocal('vote+:' + activityId + '/' + voterName);
+    supa.from('japan_votes').upsert({ activity_id: activityId, voter_name: voterName }).then(({ error }) => {
+      if (error) console.warn('addVote failed', error);
+    });
+  },
+  removeVote(activityId, voterName) {
+    if (!supa || !voterName) return;
+    markLocal('vote-:' + activityId + '/' + voterName);
+    supa.from('japan_votes').delete().eq('activity_id', activityId).eq('voter_name', voterName).then(({ error }) => {
+      if (error) console.warn('removeVote failed', error);
+    });
+  },
+  upsertGlance(key, edits) {
+    if (!supa) return;
+    const row = {
+      key,
+      label: edits.label != null ? edits.label : '',
+      title: edits.title != null ? edits.title : '',
+      subtitle: edits.subtitle != null ? edits.subtitle : '',
+    };
+    markLocal('glance:' + key);
+    supa.from('japan_trip_glance').upsert(row).then(({ error }) => {
+      if (error) console.warn('upsertGlance failed', error);
+    });
+  },
+  addInspo(item) {
+    if (!supa) return;
+    // Insert; DB returns the new id, which we'll patch back via realtime.
+    supa.from('japan_inspo').insert({
+      url: item.url,
+      caption: item.caption || '',
+      author: item.author || 'family',
+      sort_order: item.sort_order != null ? item.sort_order : 0,
+    }).then(({ error }) => {
+      if (error) console.warn('addInspo failed', error);
+    });
+  },
+  deleteInspo(id) {
+    if (!supa || !id) return;
+    markLocal('inspo-del:' + id);
+    supa.from('japan_inspo').delete().eq('id', id).then(({ error }) => {
+      if (error) console.warn('deleteInspo failed', error);
+    });
+  },
+  upsertGeocache(ubicacion, lat, lng) {
+    if (!supa) return;
+    supa.from('japan_geocache').upsert({ ubicacion, lat, lng }).then(({ error }) => {
+      if (error) console.warn('upsertGeocache failed', error);
+    });
+  },
+};
+
+// Initial pull from Supabase. If successful, overwrites local state fields
+// with server state so all family members converge on the same view.
+async function hydrateFromSupabase() {
+  if (!supa) return;
+  try {
+    const [days, acts, votes, inspo, glance, geo] = await Promise.all([
+      supa.from('japan_days').select('*').order('day_number'),
+      supa.from('japan_activities').select('*'),
+      supa.from('japan_votes').select('*'),
+      supa.from('japan_inspo').select('*').order('sort_order'),
+      supa.from('japan_trip_glance').select('*'),
+      supa.from('japan_geocache').select('*'),
+    ]);
+
+    if (days.data) {
+      state.dayEdits = {};
+      days.data.forEach(d => {
+        state.dayEdits[d.day_number] = { title: d.title, subtitle: d.subtitle, focus: d.focus };
+      });
+    }
+    if (acts.data) {
+      state.activities = {};
+      ITINERARY.forEach(d => { state.activities[d.n] = []; });
+      acts.data.forEach(r => {
+        if (!state.activities[r.day_number]) state.activities[r.day_number] = [];
+        state.activities[r.day_number].push({
+          id: r.id, title: r.title, description: r.description,
+          timeOfDay: r.time_of_day, cost: r.cost, ubicacion: r.ubicacion,
+          lat: r.lat, lng: r.lng, imageUrl: r.image_url,
+        });
+      });
+    }
+    if (votes.data) {
+      state.votes = {};
+      votes.data.forEach(v => {
+        const cur = state.votes[v.activity_id] || { count: 0, voters: [] };
+        if (!cur.voters.includes(v.voter_name)) cur.voters.push(v.voter_name);
+        cur.count = cur.voters.length;
+        state.votes[v.activity_id] = cur;
+      });
+    }
+    if (inspo.data && inspo.data.length) {
+      state.inspo = inspo.data.map(r => ({ id: r.id, url: r.url, caption: r.caption, author: r.author, sort_order: r.sort_order }));
+    }
+    if (glance.data) {
+      state.tripGlanceEdits = {};
+      glance.data.forEach(g => {
+        state.tripGlanceEdits[g.key] = { label: g.label, title: g.title, subtitle: g.subtitle };
+      });
+    }
+    if (geo.data) {
+      geo.data.forEach(g => {
+        if (g.lat != null && g.lng != null) state.geocache[g.ubicacion] = { lat: g.lat, lng: g.lng };
+      });
+    }
+    saveState();
+    render();
+    renderMap();
+  } catch (e) {
+    console.warn('hydrateFromSupabase failed', e);
+  }
+}
+
+// Subscribe to Realtime broadcasts so remote edits patch our state.
+let _realtimeChannel = null;
+function subscribeRealtime() {
+  if (!supa || _realtimeChannel) return;
+  _realtimeChannel = supa
+    .channel('japan-changes')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'japan_activities' }, (payload) => {
+      const key = 'activity:' + (payload.new?.id || payload.old?.id);
+      const delKey = 'activity-del:' + (payload.old?.id || '');
+      if (_recentLocalMutations.has(key) || _recentLocalMutations.has(delKey)) return;
+      applyActivityChange(payload);
+    })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'japan_votes' }, (payload) => {
+      const aid = payload.new?.activity_id || payload.old?.activity_id;
+      const name = payload.new?.voter_name || payload.old?.voter_name;
+      if (payload.eventType === 'INSERT' && _recentLocalMutations.has('vote+:' + aid + '/' + name)) return;
+      if (payload.eventType === 'DELETE' && _recentLocalMutations.has('vote-:' + aid + '/' + name)) return;
+      applyVoteChange(payload);
+    })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'japan_days' }, (payload) => {
+      const dayN = payload.new?.day_number || payload.old?.day_number;
+      if (_recentLocalMutations.has('day:' + dayN)) return;
+      applyDayChange(payload);
+    })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'japan_trip_glance' }, (payload) => {
+      const k = payload.new?.key || payload.old?.key;
+      if (_recentLocalMutations.has('glance:' + k)) return;
+      applyGlanceChange(payload);
+    })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'japan_inspo' }, (payload) => {
+      const id = payload.new?.id || payload.old?.id;
+      if (_recentLocalMutations.has('inspo-del:' + id)) return;
+      applyInspoChange(payload);
+    })
+    .subscribe();
+}
+
+function applyActivityChange(payload) {
+  const r = payload.new || payload.old;
+  if (!r) return;
+  if (payload.eventType === 'DELETE') {
+    const list = state.activities[r.day_number] || [];
+    const idx = list.findIndex(a => a.id === r.id);
+    if (idx >= 0) list.splice(idx, 1);
+    delete state.votes[r.id];
+  } else {
+    const list = state.activities[r.day_number] || (state.activities[r.day_number] = []);
+    const idx = list.findIndex(a => a.id === r.id);
+    const next = {
+      id: r.id, title: r.title, description: r.description,
+      timeOfDay: r.time_of_day, cost: r.cost, ubicacion: r.ubicacion,
+      lat: r.lat, lng: r.lng, imageUrl: r.image_url,
+    };
+    if (idx >= 0) list[idx] = next; else list.push(next);
+  }
+  saveState();
+  renderDayView();
+  renderBudget();
+  renderMap();
+}
+function applyVoteChange(payload) {
+  const r = payload.new || payload.old;
+  if (!r) return;
+  const v = state.votes[r.activity_id] || { count: 0, voters: [] };
+  if (payload.eventType === 'DELETE') {
+    v.voters = v.voters.filter(n => n !== r.voter_name);
+  } else if (!v.voters.includes(r.voter_name)) {
+    v.voters.push(r.voter_name);
+  }
+  v.count = v.voters.length;
+  state.votes[r.activity_id] = v;
+  saveState();
+  renderDayView();
+}
+function applyDayChange(payload) {
+  const r = payload.new || payload.old;
+  if (!r) return;
+  if (payload.eventType === 'DELETE') {
+    delete state.dayEdits[r.day_number];
+  } else {
+    state.dayEdits[r.day_number] = { title: r.title, subtitle: r.subtitle, focus: r.focus };
+  }
+  saveState();
+  renderDayView();
+  renderBudget();
+  renderMap();
+}
+function applyGlanceChange(payload) {
+  const r = payload.new || payload.old;
+  if (!r) return;
+  if (payload.eventType === 'DELETE') {
+    delete state.tripGlanceEdits[r.key];
+  } else {
+    state.tripGlanceEdits[r.key] = { label: r.label, title: r.title, subtitle: r.subtitle };
+  }
+  saveState();
+  renderTripGlance();
+}
+function applyInspoChange(payload) {
+  const r = payload.new || payload.old;
+  if (!r) return;
+  if (payload.eventType === 'DELETE') {
+    state.inspo = state.inspo.filter(i => i.id !== r.id);
+  } else {
+    const idx = state.inspo.findIndex(i => i.id === r.id);
+    const next = { id: r.id, url: r.url, caption: r.caption, author: r.author, sort_order: r.sort_order };
+    if (idx >= 0) state.inspo[idx] = next; else state.inspo.unshift(next);
+    state.inspo.sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+  }
+  saveState();
+  renderInspo();
+}
 
 /* =========================================================
    USER
@@ -862,6 +1164,7 @@ function commitGlanceEdit() {
   state.glanceSnapshot = null;
   state.editingGlance = false;
   saveState();
+  Object.entries(state.tripGlanceEdits || {}).forEach(([k, v]) => supaSync.upsertGlance(k, v));
   renderTripGlance();
 }
 
@@ -1144,6 +1447,7 @@ function commitHeaderEdit(d) {
   state.editSnapshot = null;
   state.editingHeaderDay = null;
   saveState();
+  supaSync.upsertDay(d.n, state.dayEdits[d.n] || {});
   renderDayView();
   renderMapPopups();
   renderBudget();
@@ -1180,10 +1484,17 @@ function cancelActivityEdit() {
   renderMapPopups();
 }
 function commitActivityEdit() {
+  const wasEditing = state.editingActivityId;
+  const dayN = state.editingActivityDay;
   state.editSnapshot = null;
   state.editingActivityId = null;
   state.editingActivityDay = null;
   saveState();
+  // Sync to Supabase
+  if (wasEditing && dayN) {
+    const a = (state.activities[dayN] || []).find(x => x.id === wasEditing);
+    if (a) supaSync.upsertActivity(a, dayN);
+  }
   renderDayView();
   renderBudget();
   renderMapPopups();
@@ -1202,6 +1513,7 @@ function removeActivity(aid, dayN) {
   state.editingActivityDay = null;
   state.editSnapshot = null;
   saveState();
+  supaSync.deleteActivity(aid);
   renderDayView();
   renderBudget();
   renderMapPopups();
@@ -1425,6 +1737,7 @@ function bindPanelEvents(d) {
         state.geocache[displayText] = coords;
         a.lat = coords.lat;
         a.lng = coords.lng;
+        supaSync.upsertGeocache(displayText, coords.lat, coords.lng);
       }
       sessionToken = newPlacesSession();
       hideList();
@@ -1493,11 +1806,14 @@ function bindPanelEvents(d) {
 function toggleVote(aid) {
   if (!state.user) { promptForName(); if (!state.user) return; }
   const v = state.votes[aid] || { count: 0, voters: [] };
-  if (v.voters.includes(state.user)) v.voters = v.voters.filter(u => u !== state.user);
+  const wasVoted = v.voters.includes(state.user);
+  if (wasVoted) v.voters = v.voters.filter(u => u !== state.user);
   else v.voters.push(state.user);
   v.count = v.voters.length;
   state.votes[aid] = v;
   saveState();
+  if (wasVoted) supaSync.removeVote(aid, state.user);
+  else supaSync.addVote(aid, state.user);
   const btn = document.querySelector(`[data-vote="${aid}"]`);
   if (btn) {
     btn.classList.toggle('voted', v.voters.includes(state.user));
@@ -1591,6 +1907,7 @@ async function geocode(text) {
       const coords = { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
       state.geocache[key] = coords;
       saveState();
+      supaSync.upsertGeocache(key, coords.lat, coords.lng);
       return coords;
     }
   } catch (e) { /* silent */ }
@@ -1721,7 +2038,13 @@ function renderInspo() {
     </figure>
   `).join('');
   grid.querySelectorAll('[data-inspo-remove]').forEach(btn => {
-    btn.addEventListener('click', () => { state.inspo.splice(Number(btn.dataset.inspoRemove), 1); saveState(); renderInspo(); });
+    btn.addEventListener('click', () => {
+      const i = Number(btn.dataset.inspoRemove);
+      const removed = state.inspo[i];
+      state.inspo.splice(i, 1);
+      if (removed && removed.id) supaSync.deleteInspo(removed.id);
+      saveState(); renderInspo();
+    });
   });
 }
 document.getElementById('uploadInspoBtn').addEventListener('click', () => {
@@ -1737,7 +2060,9 @@ document.getElementById('hiddenInspoInput').addEventListener('change', async (e)
     try {
       const dataUrl = await fileToDataURL(file, 1200, 0.78);
       const caption = file.name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ');
-      state.inspo.unshift({ url: dataUrl, caption, author });
+      const item = { url: dataUrl, caption, author, sort_order: -Date.now() };
+      state.inspo.unshift(item);
+      supaSync.addInspo(item);
       added++;
     } catch (err) { failed++; }
   }
@@ -1867,11 +2192,16 @@ function render() {
   updateUserBadge();
 }
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
   render();
   renderMap();
   ensureUser();
   setInterval(renderCountdown, 60 * 60 * 1000);
+  // Kick off Supabase sync in the background. Hydrate first (pulls latest
+  // server state and overwrites local), then subscribe to Realtime for live
+  // updates from other family members.
+  await hydrateFromSupabase();
+  subscribeRealtime();
 });
 </script>
 </body>
