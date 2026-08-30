@@ -106,6 +106,11 @@ create table if not exists public.japan_geocache (
 -- a small family site; tighten later if needed.
 -- -----------------------------------------------------------------------------
 
+-- Bail out of any DDL that would hang more than a couple seconds waiting for
+-- a lock (usually caused by live Realtime WebSocket subscriptions).
+-- Session-level (works whether the SQL editor wraps in a transaction or not).
+set lock_timeout = '3s';
+
 alter table public.japan_days         enable row level security;
 alter table public.japan_activities   enable row level security;
 alter table public.japan_votes        enable row level security;
@@ -113,9 +118,13 @@ alter table public.japan_inspo        enable row level security;
 alter table public.japan_trip_glance  enable row level security;
 alter table public.japan_geocache     enable row level security;
 
+-- Idempotent policy creation. We DO NOT drop-then-recreate on every run,
+-- because DROP POLICY needs AccessExclusiveLock and will deadlock against
+-- live Realtime subscribers holding AccessShareLock. Just create if missing.
 do $$
 declare
     t text;
+    policy_name text;
 begin
     for t in
         select unnest(array[
@@ -127,12 +136,17 @@ begin
             'japan_geocache'
         ])
     loop
-        execute format('drop policy if exists %I on public.%I', t || '_public_all', t);
-        execute format(
-            'create policy %I on public.%I for all to anon, authenticated using (true) with check (true)',
-            t || '_public_all',
-            t
-        );
+        policy_name := t || '_public_all';
+        if not exists (
+            select 1 from pg_policies
+            where schemaname = 'public' and tablename = t and policyname = policy_name
+        ) then
+            execute format(
+                'create policy %I on public.%I for all to anon, authenticated using (true) with check (true)',
+                policy_name,
+                t
+            );
+        end if;
     end loop;
 end $$;
 
@@ -189,21 +203,35 @@ begin
     return new;
 end $$;
 
-drop trigger if exists japan_days_touch         on public.japan_days;
-drop trigger if exists japan_activities_touch   on public.japan_activities;
-drop trigger if exists japan_trip_glance_touch  on public.japan_trip_glance;
-
-create trigger japan_days_touch
-    before update on public.japan_days
-    for each row execute function public.touch_updated_at();
-
-create trigger japan_activities_touch
-    before update on public.japan_activities
-    for each row execute function public.touch_updated_at();
-
-create trigger japan_trip_glance_touch
-    before update on public.japan_trip_glance
-    for each row execute function public.touch_updated_at();
+-- Idempotent trigger creation. Same lock-avoidance reasoning as policies:
+-- DROP TRIGGER needs AccessExclusiveLock, which deadlocks against Realtime.
+do $$
+begin
+    if not exists (
+        select 1 from pg_trigger
+        where tgname = 'japan_days_touch' and tgrelid = 'public.japan_days'::regclass
+    ) then
+        create trigger japan_days_touch
+            before update on public.japan_days
+            for each row execute function public.touch_updated_at();
+    end if;
+    if not exists (
+        select 1 from pg_trigger
+        where tgname = 'japan_activities_touch' and tgrelid = 'public.japan_activities'::regclass
+    ) then
+        create trigger japan_activities_touch
+            before update on public.japan_activities
+            for each row execute function public.touch_updated_at();
+    end if;
+    if not exists (
+        select 1 from pg_trigger
+        where tgname = 'japan_trip_glance_touch' and tgrelid = 'public.japan_trip_glance'::regclass
+    ) then
+        create trigger japan_trip_glance_touch
+            before update on public.japan_trip_glance
+            for each row execute function public.touch_updated_at();
+    end if;
+end $$;
 
 
 -- -----------------------------------------------------------------------------
