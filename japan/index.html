@@ -2,9 +2,18 @@
 <html lang="es-MX">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <title>Viaje Japón · Familia Martínez · Nov 2026</title>
 <meta name="description" content="Nuestro viaje familiar a Japón en noviembre 2026." />
+
+<!-- iOS home screen + tab styling -->
+<meta name="theme-color" content="#FBF8F1" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="default" />
+<meta name="apple-mobile-web-app-title" content="Viaje Japón" />
+<meta name="format-detection" content="telephone=no" />
+<link rel="apple-touch-icon" href="assets/img/hero-family.jpg" />
+<link rel="icon" type="image/jpeg" href="assets/img/hero-family.jpg" />
 
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -36,7 +45,39 @@
 
 <style>
   :root { color-scheme: light; }
-  html, body { background-color: #FBF8F1; }
+  html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+  html, body {
+    background-color: #FBF8F1;
+    -webkit-tap-highlight-color: transparent;
+    overscroll-behavior-y: none;
+  }
+  * { -webkit-touch-callout: none; }
+  input, textarea, select, button, a { -webkit-tap-highlight-color: rgba(199, 71, 44, 0.14); touch-action: manipulation; }
+  img { -webkit-user-drag: none; }
+
+  /* Bump input font-size on small screens so iOS Safari doesn't auto-zoom on focus.
+     Design intent (14px) preserved on tablets and up. */
+  @media (max-width: 640px) {
+    input[type="text"], input[type="url"], input[type="number"], textarea, select {
+      font-size: 16px !important;
+    }
+  }
+
+  /* background-attachment: fixed janks / flickers on iOS. Fall back to normal
+     scrolling on touch-only devices so the paper mood stays but scrolling is smooth. */
+  @media (hover: none) and (pointer: coarse) {
+    body { background-attachment: scroll; }
+  }
+
+  /* Safe-area padding for iPhones with notches / home indicators. */
+  nav {
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+
+  /* Momentum scrolling on the horizontal day-pill strip. */
+  .day-pill-scroll { -webkit-overflow-scrolling: touch; }
+
   body {
     color: #1B1815;
     font-family: 'Noto Sans', system-ui, sans-serif;
@@ -366,7 +407,7 @@
     <p class="mt-3 text-ink-500 max-w-[52ch]">Da clic en un día, luego en el lápiz de cada actividad para editar título, descripción, ubicación, costo o imagen.</p>
   </div>
 
-  <div class="overflow-x-auto -mx-5 px-5 pb-3">
+  <div class="day-pill-scroll overflow-x-auto -mx-5 px-5 pb-3">
     <div id="dayPills" class="flex gap-2 min-w-max"></div>
   </div>
 

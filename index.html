@@ -2,14 +2,26 @@
 <html lang="es-MX">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <title>Trips · Familia Martínez</title>
+<meta name="theme-color" content="#FBF8F1" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-title" content="Trips" />
+<link rel="apple-touch-icon" href="japan/assets/img/hero-family.jpg" />
+<link rel="icon" type="image/jpeg" href="japan/assets/img/hero-family.jpg" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@300;400;500;700;900&family=Noto+Sans:wght@300;400;500;600&family=Noto+Sans+JP:wght@400;700&display=swap" rel="stylesheet" />
 <style>
   :root { color-scheme: light; }
-  html, body { background-color: #FBF8F1; margin: 0; padding: 0; }
+  html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+  html, body {
+    background-color: #FBF8F1;
+    margin: 0; padding: 0;
+    -webkit-tap-highlight-color: transparent;
+    overscroll-behavior-y: none;
+  }
+  a { -webkit-tap-highlight-color: rgba(199, 71, 44, 0.14); touch-action: manipulation; }
   body {
     color: #1B1815;
     font-family: 'Noto Sans', system-ui, sans-serif;
@@ -56,7 +68,7 @@
   <a class="trip" href="./japan/">
     <div>
       <span class="name">Japón</span>
-      <span class="meta">13 – 30 de noviembre, 2026 · 18 días · Tokio, Nikko, Hakone, Kioto, Nara, Osaka</span>
+      <span class="meta">13 al 30 de noviembre, 2026 · 18 días · Tokio, Nikko, Hakone, Kioto, Nara, Osaka</span>
     </div>
     <span class="arrow">→</span>
   </a>
