@@ -98,6 +98,10 @@ Collaboration works through Supabase:
 - Row Level Security policies (all in `japan/schema.sql`) enforce that the anonymous publishable key can read and write only these specific tables.
 - localStorage caches state locally so the UI is instant and works offline for reads.
 
+### Keeping the database awake
+
+The Supabase project is on the free plan, which pauses after about a week with no traffic. When paused, the page still loads but every list comes back empty. `.github/workflows/keepalive.yml` pings the database every 3 days to prevent that. If the page ever looks empty anyway, restore the project from the Supabase dashboard (all data is kept) and run the keepalive workflow once from the Actions tab. GitHub disables scheduled workflows after 60 days without commits, so rerun it manually if the repo sits untouched that long.
+
 ## 📁 Repository Structure
 
 ```
@@ -106,6 +110,8 @@ trips/
 ├── SETUP.md                    one-time setup guide (Git, GitHub Pages, Supabase)
 ├── SECRETS.md                  API keys and configuration documentation
 ├── .gitignore                  git ignore rules
+├── .github/workflows/
+│   └── keepalive.yml          pings Supabase every 3 days so it never pauses
 ├── index.html                  landing page listing all trips
 │
 ├── docs/                       workflow documentation (from vault)
