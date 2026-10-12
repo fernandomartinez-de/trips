@@ -1,0 +1,18 @@
+name: Keep Supabase awake
+
+# Free Supabase projects pause after ~7 days without traffic.
+# This pings the trips database every 3 days so the Japan page keeps loading data.
+
+on:
+  schedule:
+    - cron: '17 13 */3 * *'
+  workflow_dispatch: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Supabase
+        run: |
+          curl -sf "https://hmeenrnlbdzqhbdbsxjf.supabase.co/rest/v1/japan_days?select=day_number&limit=1" \
+            -H "apikey: sb_publishable_n0GbcnDhojPMzKOVAGDp3Q_tSrLYnlX"
